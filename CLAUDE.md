@@ -32,11 +32,13 @@ Configure CDM sources via the `WEBAPI_SOURCES` environment variable (JSON array 
 | `EXPRESS_PORT` | `8080` | HTTP listen port |
 | `EXPRESS_HOST` | `0.0.0.0` | HTTP listen host |
 | `DB_PATH` | `/data/webapi.db` | SQLite application database path |
-| `WEBAPI_AUTH_HEADER` | `x-forwarded-user` | Request header used to identify the current user |
+| `WEBAPI_SSO_JWKS_URL` | _(unset)_ | CHI Authentication JWKS; when set, requests must carry a verified `sso-assertion` |
+| `WEBAPI_SSO_ISSUER` / `WEBAPI_SSO_AUDIENCE` | _(unset)_ | Pinned `iss` / `aud` for the assertion (required with the JWKS URL) |
+| `WEBAPI_AUTH_HEADER` | `x-forwarded-user` | Legacy unsigned username header, used only when `WEBAPI_SSO_JWKS_URL` is unset |
 | `WEBAPI_VERSION` | `2.15.1` | Version string returned by `/info` |
 | `WEBAPI_SOURCES` | `[]` | JSON array of CDM source objects |
 
-The service trusts whatever value the auth header contains — it is designed to sit behind an authenticating proxy. Set `WEBAPI_AUTH_HEADER` to match whatever your proxy injects.
+Identity comes from CHI Authentication's signed `sso-assertion` (ES256 JWT, verified with `jose` against the JWKS in `src/middleware/user.js`). Without `WEBAPI_SSO_JWKS_URL` it falls back to trusting the unsigned `WEBAPI_AUTH_HEADER` — development only.
 
 ### CIRCE (cohort generation)
 
@@ -125,5 +127,5 @@ Each domain has a file in `src/routes/`. Routes are plain Express routers mounte
 
 ### Middleware
 
-- **[src/middleware/user.js](src/middleware/user.js)** — reads `WEBAPI_AUTH_HEADER` from the request and attaches `req.user = { login, name }`. Falls back to `"anonymous"`.
+- **[src/middleware/user.js](src/middleware/user.js)** — verifies the CHI `sso-assertion` JWT and attaches `req.user = { login, name, email }` (401 missing / 403 invalid / 503 JWKS down). Legacy mode trusts `WEBAPI_AUTH_HEADER`, falling back to `"anonymous"`.
 - **[src/middleware/errors.js](src/middleware/errors.js)** — Express error handler; maps `err.status` to HTTP status codes.

@@ -19,13 +19,18 @@ services:
     # reuses the locally cached image and silently deploys nothing new.
     pull_policy: always
     restart: unless-stopped
+    # Bound to loopback by default: only the host's nginx may reach this port.
+    # Set BIND_ADDRESS only if nginx runs elsewhere, and then firewall the port.
     ports:
-      - "${HTTP_PORT}:${EXPRESS_PORT}"
+      - "${BIND_ADDRESS:-127.0.0.1}:${HTTP_PORT}:${EXPRESS_PORT}"
     environment:
       DB_PATH: ${DB_PATH}
       EXPRESS_PORT: ${EXPRESS_PORT}
       EXPRESS_HOST: ${EXPRESS_HOST}
       WEBAPI_AUTH_HEADER: ${WEBAPI_AUTH_HEADER}
+      WEBAPI_SSO_JWKS_URL: ${WEBAPI_SSO_JWKS_URL:-}
+      WEBAPI_SSO_ISSUER: ${WEBAPI_SSO_ISSUER:-}
+      WEBAPI_SSO_AUDIENCE: ${WEBAPI_SSO_AUDIENCE:-}
       WEBAPI_SOURCES: ${WEBAPI_SOURCES}
       WEBAPI_VERSION: ${WEBAPI_VERSION}
     volumes:

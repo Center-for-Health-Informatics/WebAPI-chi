@@ -50,7 +50,11 @@ All configuration is through environment variables. No config files.
 | `EXPRESS_HOST` | `0.0.0.0` | HTTP listen address |
 | `DB_PATH` | `/data/webapi.db` | Path to the SQLite database file. The directory must exist. |
 | `WEBAPI_SOURCES` | `[]` | JSON array of CDM source objects (see below) |
-| `WEBAPI_AUTH_HEADER` | `x-forwarded-user` | Request header containing the authenticated username, set by the upstream proxy |
+| `WEBAPI_SSO_JWKS_URL` | _(unset)_ | CHI Authentication JWKS URL. When set, requests must carry a valid signed assertion (see Authentication) |
+| `WEBAPI_SSO_ISSUER` | _(unset)_ | Required `iss` of the assertion, e.g. `https://chi-tools.uc.edu/auth/` |
+| `WEBAPI_SSO_AUDIENCE` | _(unset)_ | Required `aud` of the assertion, e.g. `chi-tools.uc.edu` |
+| `WEBAPI_SSO_HEADER` | `sso-assertion` | Request header carrying the assertion |
+| `WEBAPI_AUTH_HEADER` | `x-forwarded-user` | Legacy: unsigned username header, used only when `WEBAPI_SSO_JWKS_URL` is unset |
 | `WEBAPI_VERSION` | `2.15.1` | Version string reported by `GET /info` |
 
 ### CDM Sources
@@ -79,18 +83,24 @@ Multiple sources are supported. Atlas will show all of them in its source picker
 
 ## Authentication
 
-WebAPI-node does **not** implement authentication itself. It reads a single HTTP request header (configured via `WEBAPI_AUTH_HEADER`) and treats its value as the authenticated username. All requests are granted full access.
+WebAPI-node does not sign users in itself. It relies on [CHI Authentication](https://github.com/Center-for-Health-Informatics/auth): nginx calls CHI Authentication via `auth_request`, which returns a short-lived ES256 JWT (`SSO-Assertion`). nginx forwards it to WebAPI, which verifies it against CHI Authentication's JWKS and pins `iss`/`aud` to `WEBAPI_SSO_ISSUER`/`WEBAPI_SSO_AUDIENCE`. A client cannot forge an identity even if it reaches the port directly.
 
-In production, place an nginx reverse proxy in front that authenticates users and injects the header:
+- no assertion → `401`; invalid, expired, or for another host → `403`; JWKS unreachable → `503`
+- `sub` becomes the login; `given_name`/`family_name` the display name
+- Every signed-in user still has full access (no roles).
 
 ```nginx
 location /WebAPI/ {
-    proxy_pass http://webapi:8080/;
-    proxy_set_header x-forwarded-user $remote_user;
+    auth_request /auth/check_permissions;
+    auth_request_set $sso_assertion $upstream_http_sso_assertion;
+    proxy_set_header sso-assertion $sso_assertion;
+    proxy_pass http://127.0.0.1:8080/;
 }
 ```
 
-Without a proxy (e.g. in development), every request runs as `anonymous`.
+See CHI Authentication's `etc/nginx_configuration.md` for the `/auth/` locations and 401/403 handling.
+
+**Legacy mode:** if `WEBAPI_SSO_JWKS_URL` is unset, the service falls back to trusting the unsigned `WEBAPI_AUTH_HEADER` header (logging a warning at startup), and without it every request runs as `anonymous`. Use this only for local development.
 
 ## CIRCE
 
